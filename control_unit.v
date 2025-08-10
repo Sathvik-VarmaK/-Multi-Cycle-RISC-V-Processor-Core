@@ -1,64 +1,91 @@
-module top_module(
-    input clk,
-    input reset
+module control_unit(
+    input             clk,
+    input             reset,
+    input       [6:0] opcode,
+    input       [2:0] funct3,
+    input             funct7,
+    input             zero_flag,
+    output reg  [1:0] pc_source,
+    output reg        reg_write,
+    output reg        mem_read,
+    output reg        mem_write,
+    output reg  [1:0] alu_src_b,
+    output reg  [1:0] wb_src,
+    output reg  [2:0] alu_op,
+    output reg        imm_sign
 );
+    parameter S_FETCH = 3'b000, S_DECODE = 3'b001, S_EXECUTE_R = 3'b010, 
+              S_EXECUTE_I = 3'b011, S_MEM_ADDR = 3'b100, S_MEM_READ = 3'b101, 
+              S_MEM_WRITE = 3'b110, S_WB = 3'b111;
+    reg [2:0] state, next_state;
 
-    wire        reg_write, mem_read, mem_write;
-    wire [1:0]  pc_source, alu_src_b, wb_src;
-    wire [2:0]  alu_op;
-    wire        imm_sign;
+    parameter R_TYPE = 7'b0110011, I_TYPE = 7'b0010011, LOAD = 7'b0000011,
+              STORE = 7'b0100011, BRANCH = 7'b1100011, JAL = 7'b1101111;
 
-    wire        zero_flag;
-    wire [31:0] pc, instruction;
-    wire [31:0] read_data_1, read_data_2, write_back_data;
-    wire [31:0] immediate_extended;
-    wire [31:0] alu_input_b, alu_result;
-    wire [31:0] mem_read_data;
-    wire [31:0] pc_plus_4, branch_addr, jump_addr, next_pc;
-    
-    wire [6:0]  opcode = instruction[6:0];
-    wire [4:0]  rs1    = instruction[19:15];
-    wire [4:0]  rs2    = instruction[24:20];
-    wire [4:0]  rd     = instruction[11:7];
-    wire [2:0]  funct3 = instruction[14:12];
-    wire        funct7 = instruction[30];
+    always @(posedge clk or posedge reset) begin
+        if (reset) state <= S_FETCH;
+        else       state <= next_state;
+    end
 
-    control_unit ctrl_unit (
-        .clk(clk), .reset(reset), .opcode(opcode), .funct3(funct3),
-        .funct7(funct7), .zero_flag(zero_flag),
-        .pc_source(pc_source), .reg_write(reg_write), .mem_read(mem_read),
-        .mem_write(mem_write), .alu_src_b(alu_src_b), .wb_src(wb_src),
-        .alu_op(alu_op), .imm_sign(imm_sign)
-    );
+    always @(*) begin
+        next_state = S_FETCH; pc_source = 2'b00; reg_write = 1'b0; mem_read = 1'b0;
+        mem_write = 1'b0; alu_src_b = 2'b00; wb_src = 2'b00; alu_op = 3'b000; imm_sign = 1'b0;
 
-    PC pc_reg (.clk(clk), .reset(reset), .pc_in(next_pc), .pc_out(pc));
-    assign pc_plus_4   = pc + 4;
-    assign branch_addr = pc + immediate_extended;
-    assign jump_addr   = pc + immediate_extended;
-
-    assign next_pc     = (pc_source == 2'b01) ? branch_addr :
-                       (pc_source == 2'b10) ? jump_addr   :
-                       pc_plus_4;
-
-    instruction_memory inst_mem (.addr(pc), .instruction(instruction));
-
-    register_file reg_file_inst (
-        .clk(clk), .reg_write(reg_write), .rs1(rs1), .rs2(rs2), .rd(rd),
-        .write_data(write_back_data), .read_data1(read_data_1), .read_data2(read_data_2)
-    );
-    
-    imm_gen imm_gen_inst (.instruction(instruction), .imm_sign(imm_sign), .immediate(immediate_extended));
-    
-    assign alu_input_b = (alu_src_b == 2'b01) ? immediate_extended : read_data_2;
-    alu alu_inst (.a(read_data_1), .b(alu_input_b), .alu_op(alu_op), .alu_out(alu_result), .zero(zero_flag));
-    
-    data_memory data_mem_inst (
-        .clk(clk), .addr(alu_result), .write_data(read_data_2),
-        .mem_write(mem_write), .mem_read(mem_read), .read_data(mem_read_data)
-    );
-    
-    assign write_back_data = (wb_src == 2'b01) ? mem_read_data :
-                           (wb_src == 2'b10) ? pc_plus_4     :
-                           alu_result;
-
+        case (state)
+            S_FETCH: next_state = S_DECODE;
+            S_DECODE: begin
+                case (opcode)
+                    R_TYPE:   next_state = S_EXECUTE_R;
+                    I_TYPE:   next_state = S_EXECUTE_I;
+                    LOAD, STORE: next_state = S_MEM_ADDR;
+                    BRANCH: begin
+                        if (zero_flag) begin
+                           pc_source = 2'b01;
+                           next_state = S_FETCH;
+                        end else next_state = S_FETCH;
+                    end
+                    JAL: begin
+                        pc_source = 2'b10;
+                        wb_src = 2'b10;
+                        reg_write = 1'b1;
+                        next_state = S_FETCH;
+                    end
+                    default: next_state = S_FETCH;
+                endcase
+            end
+            S_EXECUTE_R: begin
+                alu_src_b = 2'b00;
+                alu_op = {funct7, funct3};
+                next_state = S_WB;
+            end
+            S_EXECUTE_I: begin
+                alu_src_b = 2'b01;
+                alu_op = funct3;
+                imm_sign = 1'b1;
+                next_state = S_WB;
+            end
+            S_MEM_ADDR: begin
+                alu_src_b = 2'b01;
+                alu_op = 3'b000;
+                imm_sign = 1'b1;
+                if (opcode == LOAD) next_state = S_MEM_READ;
+                else next_state = S_MEM_WRITE;
+            end
+            S_MEM_READ: begin
+                mem_read = 1'b1;
+                next_state = S_WB;
+            end
+            S_MEM_WRITE: begin
+                mem_write = 1'b1;
+                next_state = S_FETCH;
+            end
+            S_WB: begin
+                reg_write = 1'b1;
+                if (opcode == LOAD) wb_src = 2'b01;
+                else wb_src = 2'b00;
+                next_state = S_FETCH;
+            end
+            default: next_state = S_FETCH;
+        endcase
+    end
 endmodule
