@@ -2,7 +2,6 @@
 
 ![Language](https://img.shields.io/badge/Language-Verilog-blue.svg)
 ![Simulator](https://img.shields.io/badge/Simulator-ModelSim%20%7C%20QuestaSim%20%7C%20Vivado-green.svg)
-![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)
 
 This repository contains the complete Verilog source code for a 32-bit multi-cycle RISC-V processor. This project was built from the ground up as a deep dive into computer architecture, focusing on implementing a robust control unit and a datapath capable of handling data processing, memory access, and, most importantly, control flow.
 
@@ -52,7 +51,7 @@ To run a simulation of this processor, you'll need a Verilog simulator like Mode
 
 1.  **Clone the repository:**
     ```sh
-    git clone <your-repo-url>
+    git clone <https://github.com/Sathvik-VarmaK/Multi-Cycle-RISC-V-Processor-Core.git>
     ```
 2.  **Create a project** in your simulator of choice.
 3.  **Add all the Verilog files** from the `src/` directory as design sources.
@@ -88,6 +87,3 @@ FE9FF06F
 After the simulation, you can verify that register `x7` contains the value `0`.
 
 ---
-## ## License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
